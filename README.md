@@ -1,20 +1,140 @@
-# MPComm - Multiparty Communication
-Very simple demo of multicast communication without coordination. The intent is to demonstrate how things can go wrong as we scale a distributed system (in this case, scaling in the geographical dimension) without taking appropriate measures to coordinate the behavior of its components. Later, this example will serve as the basis to implement coordination protocols, notably for message ordering, as part of course assignments.
+# MPComm — Multiparty Communication
 
-## Overall structure
-A set of **peer processes** is established and each process multicasts a sequence of messages to all the others at random intervals. Messages are stamped with the ID of the sending process and a local sequence number defined by the sending process. This is a simple attempt to demonstrate the problem of message ordering (or, indeed, the lack of message ordering).
+## Sobre o projeto
 
-The peer processes run the *peerCommunicatorUDP.py* program, which has two separate threads, one for sending and the other for receiving messages. After starting, a peer processes waits for a signal (from a process that coordinates the experiment) in order to actually start multicasting the sequence of messages. Each peer collects all the received messages (in the order that they were received) and sends the list of messages to the coordinator process, which will compare the order of messages as received by all the peers (as described next).
+O MPComm é uma aplicação desenvolvida em Python que demonstra a comunicação entre múltiplos processos em um sistema distribuído.
 
-A separate process runs *comparisonServer.py*, which, besides coordinating the start of the peer processes (by sending the start signal mentioned above), waits for the list of received messages from each peer and compares their order. It reports a metric that indicates the occurrence of out-of-order messages (actually, the number of message exchange rounds in which at least one process received a different message form the others). Importantly, we assume that no messages are lost, and, in an ideal scenario, all processes should receive all the same messages in the same order. Note, however, that the current version does not use a reliable message communication protocol to ensure that messages are not lost (this can be an improvement to be implemented as an assignment).
+Nesta etapa do trabalho, o objetivo foi substituir as comunicações cliente-servidor que utilizavam sockets TCP diretamente por chamadas RPC, utilizando **XML-RPC**, mantendo a comunicação UDP entre os peers.
 
-A second server process, running *GroupMngr.py*, is used for peers to register themselves (notably their IP addresses) as well as to discover the other peers.
+## Integrantes
 
-In order to actually see the problem of message ordering, it is necessary to introduce variability on message communication latency, such as by running the peer processes on different networks, e.g., running some of the peers in one region of the cloud, whereas the others are run on another region. This illustrates the issue of geographic scalability, when the system works fine when all its components are in the same network, but starts to behave erroneously when its components are spread across the Internet.
+| Nome | Matrícula | E-mail |
+|---|---|---|
+| Maria Michelle Rodrigues Amaral | 202401809 | mariaamaral@discente.com |
 
-## Setup
-- Create one instance (virtual machine in the cloud) to run the two servers, and a number of instances (e.g., 6 in one cloud region, 2 on another) to run the peers.
-- Edit *constMP.py* with the correct IP address of the instance where the two servers will run. Tip: allocate a fixed IP address (elastic IP in AWS jargon) to the server instance. Also edit the file to configure the number of peers processes in the experiment.
-- On the server instance, run *GroupMngr.py*
-- On some of the peer instances: run *peerCommunicator.py*
-- Back on the server instance: run *comparisonServer.py*
+## Funcionalidades
+
+- Registro e gerenciamento dos peers participantes.
+- Inicialização remota dos peers.
+- Troca de mensagens entre os participantes utilizando UDP.
+- Realização de handshake antes do envio das mensagens.
+- Armazenamento das mensagens recebidas em arquivos de log.
+- Envio dos registros ao servidor de comparação.
+- Verificação de diferenças na ordem de recebimento das mensagens.
+- Encerramento controlado da aplicação.
+
+## Arquitetura
+
+A aplicação possui três componentes principais:
+
+| Componente | Responsabilidade |
+|---|---|
+| `GroupMngr.py` | Gerencia o registro e a lista de peers. |
+| `comparisonServer.py` | Coordena a execução e compara os registros recebidos. |
+| `peerCommunicatorUDP.py` | Executa os peers e realiza a troca de mensagens. |
+
+### Comunicação entre os componentes
+
+<escape>```text
+             Comparison Server
+                    |
+              XML-RPC / TCP
+                    |
+               Group Manager
+                    |
+              XML-RPC / TCP
+                    |
+                   Peers
+                    |
+                  UDP
+                    |
+           Troca de mensagens
+             entre os peers
+```</escape>
+
+O XML-RPC é utilizado nas operações de gerenciamento, inicialização e envio dos registros. Já o UDP permanece responsável pela comunicação direta entre os peers.
+
+## Detalhes da implementação
+
+A melhoria foi realizada utilizando recursos da biblioteca padrão do Python:
+
+- **XML-RPC (`xmlrpc.server` e `xmlrpc.client`):** permite disponibilizar e executar métodos remotamente entre os processos.
+- **Sockets UDP (`socket`):** responsáveis pelo envio e recebimento de mensagens entre os peers.
+- **Threads (`threading`):** permitem executar simultaneamente os servidores e as atividades de comunicação.
+- **Filas (`queue`):** organizam as solicitações de inicialização dos peers e os registros recebidos pelo servidor.
+- **Pickle (`pickle`):** realiza a serialização e desserialização das mensagens transmitidas por UDP.
+
+## Como executar
+
+### Requisitos
+
+- Python 3 instalado.
+- Git.
+
+Não são necessárias bibliotecas externas para esta versão, pois os recursos utilizados pertencem à biblioteca padrão do Python.
+
+### 1. Obter o projeto
+
+```bash
+git clone https://github.com/mrmichelledev/SD-Parte1.git
+cd SD-Parte1/MPComm
+```
+
+### 2. Iniciar a aplicação
+
+Abra três terminais na pasta `MPComm` e execute os componentes nesta ordem:
+
+**Terminal 1 — Group Manager**
+
+```bash
+python GroupMngr.py
+```
+
+**Terminal 2 — Peer**
+
+```bash
+python peerCommunicatorUDP.py
+```
+
+**Terminal 3 — Comparison Server**
+
+```bash
+python comparisonServer.py
+```
+
+Quando solicitado, informe a quantidade de mensagens que cada peer deverá enviar.
+
+Para encerrar a aplicação, informe `0` no Comparison Server.
+
+### Configurações
+
+Os endereços, as portas e a quantidade de peers esperada são definidos em `constMP.py`.
+
+A configuração atual utiliza `127.0.0.1` (localhost), permitindo executar os processos no mesmo computador.
+
+## Testes realizados
+
+Foi realizado um teste local com um peer e três mensagens.
+
+Foram verificadas as seguintes etapas:
+
+- Registro do peer no Group Manager.
+- Inicialização remota por XML-RPC.
+- Troca de mensagens e handshakes por UDP.
+- Geração e envio dos arquivos de log.
+- Comparação das mensagens recebidas.
+- Encerramento da aplicação.
+
+Resultado apresentado:
+
+```text
+Found 0 unordered message rounds
+```
+
+O resultado indica que não foram identificadas diferenças de ordenação no teste realizado. Como a execução utilizou apenas um peer, ainda não representa uma validação da ordenação entre múltiplos participantes.
+
+## Considerações finais
+
+A implementação permitiu substituir as interações cliente-servidor baseadas em sockets TCP diretamente por chamadas XML-RPC, simplificando a comunicação entre os componentes.
+
+A comunicação UDP entre os peers foi preservada, mantendo a estrutura original de troca de mensagens da aplicação.
